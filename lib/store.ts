@@ -50,13 +50,17 @@ function writeData(data: SessionData[]) {
 let memoryStore: SessionData[] = [];
 
 function getStore(): SessionData[] {
+  if (memoryStore.length > 0) return memoryStore;
   try {
     const onDisk = readData();
-    if (onDisk.length > 0) return onDisk;
+    if (onDisk.length > 0) {
+      memoryStore = onDisk;
+      return onDisk;
+    }
   } catch {
     //
   }
-  return memoryStore.length > 0 ? memoryStore : readData();
+  return memoryStore;
 }
 
 function persist(data: SessionData[]) {

@@ -107,7 +107,14 @@ export default function Home() {
     setNewSessionName("");
     setNewSessionDate(new Date().toISOString().slice(0, 10));
     await loadSessions();
-    if (data.session) setSelectedId(data.session.id);
+    if (data.session) {
+      setSelectedId(data.session.id);
+      if (data.sessionData) {
+        setSessionData(data.sessionData);
+        setSessionError(null);
+        setSessionLoading(false);
+      }
+    }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {

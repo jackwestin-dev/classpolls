@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessions, createSession } from "@/lib/store";
+import { getSessions, createSession, getSessionData } from "@/lib/store";
 
 export function GET() {
   const sessions = getSessions();
@@ -16,5 +16,9 @@ export async function POST(request: NextRequest) {
   const name = String(body.name ?? "Unnamed session").trim() || "Unnamed session";
   const date = String(body.date ?? new Date().toISOString().slice(0, 10)).trim();
   const session = createSession(name, date);
-  return NextResponse.json({ session });
+  const sessionData = getSessionData(session.id);
+  return NextResponse.json({
+    session,
+    sessionData: sessionData ?? { session, questions: [] },
+  });
 }
