@@ -1,27 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionData } from "@/lib/store";
-import { loadRosterFromFile } from "@/lib/roster";
 import { computeParticipationAndAccuracy } from "@/lib/participation";
+import type { SessionData } from "@/lib/store";
+import type { RosterEntry } from "@/lib/roster";
 
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const sessionId = searchParams.get("sessionId");
-  const format = searchParams.get("format") || "json"; // json | csv
+export async function GET() {
+  return NextResponse.json(
+    { error: "Use POST with body: { sessionData, roster, format: 'csv' | 'json' }" },
+    { status: 400 }
+  );
+}
 
-  if (!sessionId) {
+export async function POST(request: NextRequest) {
+  let body: {
+    sessionData: SessionData;
+    roster: RosterEntry[];
+    format?: "csv" | "json";
+  };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+  const { sessionData, roster, format = "json" } = body;
+  if (!sessionData?.session || !Array.isArray(sessionData.questions) || !Array.isArray(roster)) {
     return NextResponse.json(
-      { error: "Query param sessionId is required" },
+      { error: "Body must include sessionData (session + questions) and roster arrays" },
       { status: 400 }
     );
   }
 
-  const data = getSessionData(sessionId);
-  if (!data) {
-    return NextResponse.json({ error: "Session not found" }, { status: 404 });
-  }
-
-  const roster = loadRosterFromFile();
-  const summary = computeParticipationAndAccuracy(data, roster);
+  const summary = computeParticipationAndAccuracy(sessionData, roster);
 
   if (format === "csv") {
     const header =
@@ -42,7 +50,7 @@ export async function GET(request: NextRequest) {
     return new NextResponse(csv, {
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="session_${sessionId}_export.csv"`,
+        "Content-Disposition": `attachment; filename="session_${sessionData.session.id}_export.csv"`,
       },
     });
   }
