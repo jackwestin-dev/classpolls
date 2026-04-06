@@ -182,31 +182,64 @@ export default function Home() {
   }, [newSessionName, newSessionDate, sessions, sessionsData, persistSessions]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
     setError(null);
     setExtracted(null);
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const dataUrl = reader.result as string;
-      setExtracting(true);
+    setExtracting(true);
+
+    const readAsDataUrl = (file: File): Promise<string> =>
+      new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error(`Failed to read ${file.name}`));
+        reader.readAsDataURL(file);
+      });
+
+    (async () => {
       try {
-        const res = await fetch("/api/extract", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ image: dataUrl }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Extraction failed");
-        setExtracted(data.rows ?? []);
+        const dataUrls = await Promise.all(files.map(readAsDataUrl));
+        const results = await Promise.all(
+          dataUrls.map(async (dataUrl) => {
+            const res = await fetch("/api/extract", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ image: dataUrl }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "Extraction failed");
+            return (data.rows ?? []) as ExtractedRow[];
+          })
+        );
+
+        // Merge rows from all screenshots; deduplicate by name keeping first non-empty response
+        const merged: ExtractedRow[] = [];
+        const seen = new Map<string, number>(); // name -> index in merged
+        for (const rows of results) {
+          for (const row of rows) {
+            const key = row.name.toLowerCase().trim();
+            if (!key) continue;
+            if (seen.has(key)) {
+              const idx = seen.get(key)!;
+              if (!merged[idx].response && row.response) {
+                merged[idx] = { ...merged[idx], response: row.response };
+              }
+            } else {
+              seen.set(key, merged.length);
+              merged.push(row);
+            }
+          }
+        }
+
+        setExtracted(merged);
         setCorrectAnswer("");
       } catch (err) {
         setError(err instanceof Error ? err.message : "Extraction failed");
       } finally {
         setExtracting(false);
       }
-    };
-    reader.readAsDataURL(file);
+    })();
+
     e.target.value = "";
   };
 
@@ -437,11 +470,12 @@ export default function Home() {
             </h2>
             <div className="mb-4">
               <label className="block text-sm font-medium text-stone-600 mb-1">
-                Add poll screenshot (Users + Response columns)
+                Add poll screenshot(s) — select multiple if the list spans several screenshots
               </label>
               <input
                 type="file"
                 accept="image/png,image/jpeg,image/jpg"
+                multiple
                 onChange={handleFileSelect}
                 disabled={extracting}
                 className="block text-sm text-stone-600 file:mr-2 file:rounded file:border-0 file:bg-stone-200 file:px-3 file:py-1.5 file:text-sm"
@@ -452,7 +486,7 @@ export default function Home() {
             {extracted && extracted.length > 0 && (
               <div className="rounded-lg border border-stone-200 bg-white p-4 mb-4">
                 <p className="text-sm font-medium text-stone-700 mb-2">
-                  Extracted rows ({extracted.length}) — set correct answer then Save
+                  Extracted rows ({extracted.length}, merged from all screenshots) — set correct answer then Save
                 </p>
                 <div className="flex items-center gap-2 mb-3">
                   <label className="text-sm text-stone-600">Correct answer:</label>
